@@ -1,0 +1,37 @@
+name: Canh bao 3-1-3
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"  # mỗi 10 phút (GitHub có thể chạy trễ vài phút)
+  workflow_dispatch:        # cho phép bấm chạy tay
+
+permissions:
+  contents: write           # để lưu lại da_gui.json
+
+concurrency:
+  group: canh-bao-3-1-3
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Kiểm tra mẫu 3-1-3 và gửi Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python canh_bao_3_1_3.py --once
+
+      - name: Lưu danh sách mẫu đã báo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add da_gui.json
+          git diff --cached --quiet || (git commit -m "Cập nhật da_gui.json" && git push)
