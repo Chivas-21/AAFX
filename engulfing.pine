@@ -1,0 +1,101 @@
+//@version=6
+indicator("AAFX - Engulfing Pairs", overlay = true, max_boxes_count = 500)
+
+// ── Hiển thị ────────────────────────────────────────────────────────
+showBull  = input.bool(true, "Hiện Bullish Engulfing", group = "Hiển thị")
+showBear  = input.bool(true, "Hiện Bearish Engulfing", group = "Hiển thị")
+drawBox   = input.bool(true, "Vẽ khung quanh cặp nến", group = "Hiển thị")
+showStats = input.bool(true, "Hiện bảng thống kê", group = "Hiển thị")
+bullCol   = input.color(color.new(color.teal, 80), "Màu Bullish", group = "Hiển thị")
+bearCol   = input.color(color.new(color.red, 80), "Màu Bearish", group = "Hiển thị")
+
+// ── Engulfing rõ ràng ───────────────────────────────────────────────
+minRatio   = input.float(1.5, "Thân nến 2 ≥ x lần thân nến 1", minval = 1.0, step = 0.1, group = "Engulfing rõ ràng")
+minBodyPct = input.float(30, "Thân nến 1 tối thiểu (% biên độ nến 1)", minval = 0, maxval = 100, group = "Engulfing rõ ràng")
+atrMult    = input.float(0.7, "Thân nến 2 ≥ x lần ATR(14)", minval = 0, step = 0.1, group = "Engulfing rõ ràng")
+maxWickPct = input.float(25, "Râu phía đóng cửa của nến 2 tối đa (% biên độ)", minval = 0, maxval = 100, group = "Engulfing rõ ràng")
+useWicks   = input.bool(false, "Nến 2 bao cả râu nến 1 (high/low)", group = "Engulfing rõ ràng")
+
+// ── Bối cảnh đảo chiều ──────────────────────────────────────────────
+useTrend = input.bool(true, "Chỉ lấy tín hiệu ngược xu hướng EMA", group = "Bối cảnh đảo chiều")
+emaLen   = input.int(50, "Độ dài EMA", minval = 1, group = "Bối cảnh đảo chiều")
+useSwing = input.bool(true, "Cặp nến phải tạo đáy/đỉnh mới", group = "Bối cảnh đảo chiều")
+swingLen = input.int(10, "Số nến xét đáy/đỉnh", minval = 2, group = "Bối cảnh đảo chiều")
+useRsi   = input.bool(false, "Lọc RSI quá bán / quá mua", group = "Bối cảnh đảo chiều")
+rsiLen   = input.int(14, "Độ dài RSI", minval = 1, group = "Bối cảnh đảo chiều")
+rsiLow   = input.float(35, "Bullish khi RSI nến 1 ≤", group = "Bối cảnh đảo chiều")
+rsiHigh  = input.float(65, "Bearish khi RSI nến 1 ≥", group = "Bối cảnh đảo chiều")
+
+// ── Thống kê ────────────────────────────────────────────────────────
+lookAhead = input.int(6, "Đánh giá sau N nến", minval = 1, group = "Thống kê")
+
+// ── Tính toán (gọi ta.* ở ngoài biểu thức điều kiện) ───────────────
+atr         = ta.atr(14)
+ema         = ta.ema(close, emaLen)
+rsi         = ta.rsi(close, rsiLen)
+lowestLow   = ta.lowest(low, swingLen)
+highestHigh = ta.highest(high, swingLen)
+
+body1  = math.abs(close[1] - open[1])
+body2  = math.abs(close - open)
+range1 = high[1] - low[1]
+range2 = high - low
+
+// Engulfing rõ: nến 2 lớn hẳn nến 1 và lớn so với biến động chung, nến 1 không phải doji
+sizeOk = body2 > body1 and body2 >= body1 * minRatio and body2 >= atr * atrMult and range1 > 0 and body1 / range1 * 100 >= minBodyPct
+wickOk = not useWicks or (high >= high[1] and low <= low[1])
+
+// Nến 2 đóng cửa mạnh: gần đỉnh (Bullish) hoặc gần đáy (Bearish)
+bullShape = close[1] < open[1] and close > open and open <= close[1] and close >= open[1] and range2 > 0 and (high - close) / range2 * 100 <= maxWickPct
+bearShape = close[1] > open[1] and close < open and open >= close[1] and close <= open[1] and range2 > 0 and (close - low) / range2 * 100 <= maxWickPct
+
+// Bối cảnh: xuất hiện sau nhịp giảm/tăng và tại đáy/đỉnh gần nhất
+bullCtx = (not useTrend or close[1] < ema[1]) and (not useSwing or math.min(low, low[1]) <= lowestLow) and (not useRsi or rsi[1] <= rsiLow)
+bearCtx = (not useTrend or close[1] > ema[1]) and (not useSwing or math.max(high, high[1]) >= highestHigh) and (not useRsi or rsi[1] >= rsiHigh)
+
+// Chỉ xác nhận khi nến đã đóng để không bị "nháy" tín hiệu
+confirmed = barstate.isconfirmed
+
+bullSig = showBull and confirmed and sizeOk and wickOk and bullShape and bullCtx
+bearSig = showBear and confirmed and sizeOk and wickOk and bearShape and bearCtx
+
+// ── Đánh dấu ────────────────────────────────────────────────────────
+if drawBox and bullSig
+    box.new(bar_index - 1, math.max(high, high[1]), bar_index, math.min(low, low[1]), border_color = color.new(bullCol, 0), bgcolor = bullCol)
+if drawBox and bearSig
+    box.new(bar_index - 1, math.max(high, high[1]), bar_index, math.min(low, low[1]), border_color = color.new(bearCol, 0), bgcolor = bearCol)
+
+plotshape(bullSig, "Bullish Engulfing", shape.triangleup, location.belowbar, color.new(bullCol, 0), text = "BuE", textcolor = color.new(bullCol, 0), size = size.small)
+plotshape(bearSig, "Bearish Engulfing", shape.triangledown, location.abovebar, color.new(bearCol, 0), text = "BeE", textcolor = color.new(bearCol, 0), size = size.small)
+
+// ── Thống kê: sau N nến, giá có đi đúng hướng đảo chiều không ───────
+var int bullN   = 0
+var int bullWin = 0
+var int bearN   = 0
+var int bearWin = 0
+
+if bullSig[lookAhead]
+    bullN += 1
+    if close > close[lookAhead]
+        bullWin += 1
+if bearSig[lookAhead]
+    bearN += 1
+    if close < close[lookAhead]
+        bearWin += 1
+
+var table stats = table.new(position.top_right, 3, 3, bgcolor = color.new(color.black, 30), border_width = 1)
+if showStats and barstate.islast
+    table.cell(stats, 0, 0, "Sau " + str.tostring(lookAhead) + " nến", text_color = color.white, text_size = size.small)
+    table.cell(stats, 1, 0, "Số lần", text_color = color.white, text_size = size.small)
+    table.cell(stats, 2, 0, "Đúng hướng", text_color = color.white, text_size = size.small)
+    table.cell(stats, 0, 1, "Bullish", text_color = color.teal, text_size = size.small)
+    table.cell(stats, 1, 1, str.tostring(bullN), text_color = color.white, text_size = size.small)
+    table.cell(stats, 2, 1, bullN > 0 ? str.tostring(bullWin * 100.0 / bullN, "#.#") + "%" : "–", text_color = color.white, text_size = size.small)
+    table.cell(stats, 0, 2, "Bearish", text_color = color.red, text_size = size.small)
+    table.cell(stats, 1, 2, str.tostring(bearN), text_color = color.white, text_size = size.small)
+    table.cell(stats, 2, 2, bearN > 0 ? str.tostring(bearWin * 100.0 / bearN, "#.#") + "%" : "–", text_color = color.white, text_size = size.small)
+
+// ── Cảnh báo ────────────────────────────────────────────────────────
+alertcondition(bullSig, "Bullish Engulfing", "{{ticker}} ({{interval}}): Bullish Engulfing, đóng cửa {{close}}")
+alertcondition(bearSig, "Bearish Engulfing", "{{ticker}} ({{interval}}): Bearish Engulfing, đóng cửa {{close}}")
+alertcondition(bullSig or bearSig, "Engulfing bất kỳ", "{{ticker}} ({{interval}}): có cặp nến Engulfing, đóng cửa {{close}}")
